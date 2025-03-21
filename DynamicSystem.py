@@ -1,53 +1,82 @@
+from ForwardEuler import ForwardEuler
+import numpy as np
+
 class DynamicSystem:
     def __init__(self, n_states, n_inputs, n_outputs):
-        # State, derivative, input, and output variables
+        # State, derivative, input, and output variables. All column vectors
         self.__state = np.zeros((n_states,1))
         self.__derivative = np.zeros((n_states,1))
         self.__input = np.zeros((n_inputs,1))
         self.__output = np.zeros((n_outputs,1))
 
-        self.__integrator = RungeKutta()
+        # State, derivative, input, and output trajectories. to be moved to logger object in the future
+        self.state_trajectory      = [self.__state]
+        self.derivative_trajectory = [self.__derivative]
+        self.input_trajectory      = [self.__input]
+        self.output_trajectory     = [self.__output]
+        self.time = 0
 
-        self.time_stamp = 0
+        # Integrator
+        self.__explicit_integrator = ForwardEuler() 
 
         # Inter-system communication attributes
-        self.__input_bus = SystemBus()
-        self.__updated_systems = {};
-        self.__input_systems = {};
-        self.__output_systems = {};
-    
+        self.__time_stamp = 0
+        self.__input_map = ([], [])
+        self.__input_systems = set()
+        self.__output_systems = set()
+
+    @staticmethod
     def dynamic_equation(x, u, t):
         return np.zeros((len(x),1))
-
+    
+    @staticmethod
     def output_equation(x, u, t):
         return np.zeros((len(x),1))
     
     def propagate_to(self, future_time):
-        if (self.time_stamp < future_time):
-            next_state = self.__integrator.integrate_system_dynamics(self.__state[:,-1], self.__input[:,-1], self.__dynamic_equation, self.time_stamp, future_time);
-            self.__state = np.append(self.__state, next_state, axis=1)
-            self.notify_output_systems()
+        if self.__time_stamp < future_time:
+            self.__state = self.__explicit_integrator.integrate_system_dynamics(self.__state, self.__input, self.dynamic_equation, self.__time_stamp, future_time);
+            self.check_inputs_and_update(future_time)
 
-        elif (self.time_stamp > future_time):
+        elif (self.__time_stamp > future_time):
             raise ValueError("Bad time")
     
+    def check_inputs_and_update(self, future_time):
+        if len(self.__input_systems) == 0 or all(self.__input_systems.__time_stamp == future_time) :
+            self.__input = self.pull_inputs()
+            self.__derivative = self.dynamic_equation(self.__state, self.__input, self.__time_stamp)
+            self.__output  = self.output_equation(self.__state, self.__input, self.__time_stamp)
+            self.__time_stamp = future_time
+
+            self.log_trajectory()
+            self.notify_output_systems()
+
     def notify_output_systems(self):
-        if (self.__output_systems.len() > 0):
+        if len(self.__output_systems) > 0:
             for sys in self.__output_systems:
-                sys.await_and_update(self)
+                sys.check_inputs_and_update(self.__time_stamp)
 
-    def await_and_update(self, in_sys):
-        self.__updated_systems.add(in_sys)
+    def connect_input(self, input_sys, output_indeces):
+        # add a break if connect_input is used twice on the same input_sys
+        input_sys.__output_systems.add(self)
+        self.__input_systems.add(input_sys)
 
-        if (sorted(self.__input_systems) == sorted(self.__updated_systems)):
-            self.__input = np.append(self.__input, self.__input_bus.values, axis=1)
-            
-            next_derivative = self.dynamic_equation(self.__state[:,-1], self.__input[:,-1], self.time_stamp)
-            self.__derivative = np.append(self.__derivative, next_derivative, axis=1)
-            
-            next_output = self.output_equation(self.__state[:,-1], self.__input[:,-1], self.time_stamp)
-            self.__output = np.append(self.__output, next_output, axis=1)
-            
-    def connect_input(self, in_sys):
-        in_sys.__output_systems.add(self)
+        for out_idx in output_indeces:
+            self.__input_map[0].append(input_sys)
+            self.__input_map[1].append(out_idx)
 
+    def pull_inputs(self):
+        if len(self.__input_systems) == 0:
+            return
+        else:
+            n_inputs = self.__input.shape[0]
+            pulled_input = np.nan((n_inputs,1))
+            for ii in range((0, n_inputs)):
+                pulled_input[ii] = self.__input_map[0][ii].__output[self.__input_map[1][ii]]
+                
+    def log_trajectory(self):
+        self.state_trajectory.append(self.__state)
+        self.derivative_trajectory.append(self.__derivative)
+        self.input_trajectory.append(self.__input)
+        self.output_trajectory.append(self.__output)
+        self.time.append(self.__time_stamp)
