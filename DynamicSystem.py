@@ -1,4 +1,5 @@
 from ForwardEuler import ForwardEuler
+from SystemLog import SystemLog
 import numpy as np
 
 class DynamicSystem:
@@ -8,22 +9,24 @@ class DynamicSystem:
         self.__derivative = np.zeros((n_states,1))
         self.__input = np.zeros((n_inputs,1))
         self.__output = np.zeros((n_outputs,1))
+        self.__time_stamp = 0
 
-        # State, derivative, input, and output trajectories. to be moved to logger object in the future
-        self.state_trajectory      = [self.__state]
-        self.derivative_trajectory = [self.__derivative]
-        self.input_trajectory      = [self.__input]
-        self.output_trajectory     = [self.__output]
-        self.time = 0
+        # Log trajectories and plotting 
+        self.log = SystemLog(self)
 
         # Integrator
         self.__explicit_integrator = ForwardEuler() 
 
         # Inter-system communication attributes
-        self.__time_stamp = 0
         self.__input_map = ([], [])
         self.__input_systems = set()
         self.__output_systems = set()
+
+    def initialize(self, x0, t0=0):
+        self.__state = x0
+        self.__time_stamp = t0
+        self.check_inputs_and_update(t0)
+        self.log.init_log()
 
     @staticmethod
     def dynamic_equation(x, u, t):
@@ -42,13 +45,13 @@ class DynamicSystem:
             raise ValueError("Bad time")
     
     def check_inputs_and_update(self, future_time):
-        if len(self.__input_systems) == 0 or all(self.__input_systems.__time_stamp == future_time) :
+        if len(self.__input_systems) == 0 or all(self.__input_systems.__time_stamp == future_time):
             self.__input = self.pull_inputs()
             self.__derivative = self.dynamic_equation(self.__state, self.__input, self.__time_stamp)
             self.__output  = self.output_equation(self.__state, self.__input, self.__time_stamp)
             self.__time_stamp = future_time
 
-            self.log_trajectory()
+            self.log.log_trajectory()
             self.notify_output_systems()
 
     def notify_output_systems(self):
@@ -73,10 +76,3 @@ class DynamicSystem:
             pulled_input = np.nan((n_inputs,1))
             for ii in range((0, n_inputs)):
                 pulled_input[ii] = self.__input_map[0][ii].__output[self.__input_map[1][ii]]
-                
-    def log_trajectory(self):
-        self.state_trajectory.append(self.__state)
-        self.derivative_trajectory.append(self.__derivative)
-        self.input_trajectory.append(self.__input)
-        self.output_trajectory.append(self.__output)
-        self.time.append(self.__time_stamp)
