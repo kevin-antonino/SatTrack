@@ -18,22 +18,21 @@ class DynamicSystem:
         self.__explicit_integrator = ForwardEuler() 
 
         # Inter-system communication attributes
-        self.__input_map = ([], [])
+        self.__input_connections = ([], [])
         self.__input_systems = set()
         self.__output_systems = set()
 
     def initialize(self, x0, t0=0):
         self.__state = x0
         self.__time_stamp = t0
+
         self.check_inputs_and_update(t0)
         self.log.init_log()
 
-    @staticmethod
-    def dynamic_equation(x, u, t):
+    def dynamic_equation(self):
         return np.zeros((len(x),1))
     
-    @staticmethod
-    def output_equation(x, u, t):
+    def output_equation(self):
         return np.zeros((len(x),1))
     
     def propagate_to(self, future_time):
@@ -65,14 +64,30 @@ class DynamicSystem:
         self.__input_systems.add(input_sys)
 
         for out_idx in output_indeces:
-            self.__input_map[0].append(input_sys)
-            self.__input_map[1].append(out_idx)
+            self.__input_connections[0].append(input_sys)
+            self.__input_connections[1].append(out_idx)
 
     def pull_inputs(self):
         if len(self.__input_systems) == 0:
-            return
+            return self.__input
         else:
             n_inputs = self.__input.shape[0]
             pulled_input = np.nan((n_inputs,1))
             for ii in range((0, n_inputs)):
-                pulled_input[ii] = self.__input_map[0][ii].__output[self.__input_map[1][ii]]
+                pulled_input[ii] = self.__input_connections[0][ii].__output[self.__input_connections[1][ii]]
+
+class LinearSystem(DynamicSystem):
+    def __init__(self, A, B, C, D):
+        self.A = A
+        self.B = B
+        self.C = C
+        self.D = D
+        DynamicSystem.__init__(self, A.shape[0], B.shape[0], C.shape[0])
+
+    def dynamic_equation(self, x, u, t):
+        xdot = self.A @ x + self.B @ u
+        return xdot
+    
+    def output_equation(self, x, u, t):
+        y = self.C @ x + self.D @ u
+        return y

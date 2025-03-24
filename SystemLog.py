@@ -27,5 +27,6 @@ class SystemLog:
         fig, axes = plt.subplots(n_states, 1)
         for ii in range(0, n_states):
             axes[ii].plot(self.time, self.state_trajectory[ii])
+            axes[ii].set_ylabel('x' +  str(ii))
 
         plt.show()
